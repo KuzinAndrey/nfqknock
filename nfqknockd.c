@@ -34,6 +34,7 @@ static int opt_verbose = 0;
 static int opt_show_ports = 0;
 static uint16_t opt_queue_id = 100;
 static uint32_t opt_queue_maxlen = 10000;
+static uint16_t opt_touch_iptables = 0;
 static int opt_timeout = 10; // timeout for knocking sequence
 static const EVP_MD *opt_digest_type = NULL;
 
@@ -513,6 +514,7 @@ void print_usage(FILE *o, const char *prog) {
 	fprintf(o, "  -d <digest>  Digest type - md5, sha256, sha384, sha512 (default: %s)\n", opt_digest);
 	fprintf(o, "  -q <queue>   Netfilter queue number (default: %d)\n", opt_queue_id);
 	fprintf(o, "  -m <maxlen>  Netfilter max queue length (default: %d)\n", opt_queue_maxlen);
+	fprintf(o, "  -i           Create iptables rule with NFQUEUE target\n");
 	fprintf(o, "  -h           Print this help\n");
 	fprintf(o,"Decription:\n");
 	fprintf(o, "  This is nfqknockd - daemon for guard TCP ports and open/close by\n");
@@ -551,7 +553,7 @@ int main(int argc, char **argv) {
 	da_init(&close_ports_by_digest);
 
 	// parse arguments
-	while ( (opt = getopt(argc, argv, "fp:t:o:c:d:vhq:m:s")) != -1) {
+	while ( (opt = getopt(argc, argv, "fp:t:o:c:d:vhq:m:si")) != -1) {
 		switch (opt) {
 		case 'f': { // foreground
 			opt_foreground = 1;
@@ -611,6 +613,9 @@ int main(int argc, char **argv) {
 			break;
 		case 's': // show ports knocks for scripting
 			opt_show_ports = 1;
+			break;
+		case 'i': // create iptables rule
+			opt_touch_iptables = 1;
 			break;
 		case '?':
 			fprintf(stderr, "Error: unknown argument - %c\n", optopt);
@@ -702,15 +707,17 @@ int main(int argc, char **argv) {
 
 #define IPTABLES_NFQUEUE_TEMPLATE "iptables -%s INPUT -p tcp --syn -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
 	// Add iptables rule if it not present
-	snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE, "C", opt_queue_id);
-	if (opt_verbose) fprintf(stderr, "Check: %s\n", netfilter_buf);
-	if (0 != system(netfilter_buf)) {
-		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE , "I", opt_queue_id);
-		if (opt_verbose) fprintf(stderr, "Call: %s\n", netfilter_buf);
+	if (opt_touch_iptables) {
+		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE, "C", opt_queue_id);
+		if (opt_verbose) fprintf(stderr, "Check: %s\n", netfilter_buf);
 		if (0 != system(netfilter_buf)) {
-			fprintf(stderr, "Error: Cannot create iptables rule\n");
-			ret = 1; goto exit;
-		} else iptables_create_rule = 1;
+			snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE , "I", opt_queue_id);
+			if (opt_verbose) fprintf(stderr, "Call: %s\n", netfilter_buf);
+			if (0 != system(netfilter_buf)) {
+				fprintf(stderr, "Error: Cannot create iptables rule\n");
+				ret = 1; goto exit;
+			} else iptables_create_rule = 1;
+		}
 	}
 
 	// Prepare Netfilter Queue library

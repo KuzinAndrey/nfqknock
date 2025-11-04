@@ -32,6 +32,7 @@ Options:
   -d <digest>  Digest type - md5, sha256, sha384, sha512 (default: md5)
   -q <queue>   Netfilter queue number (default: 100)
   -m <maxlen>  Netfilter max queue length (default: 10000)
+  -i           Create iptables rule with NFQUEUE target
   -h           Print this help
 Decription:
   This is nfqknockd - daemon for guard TCP ports and open/close by
@@ -78,5 +79,5 @@ Host develop1
 
 After that run on target host `nfqknockd` daemon by running command:
 ```sh
-sudo nfqknockd -t 10 -p 2222 -o 123 -c 321
+sudo nfqknockd -i -t 10 -p 2222 -o 123 -c 321
 ```
