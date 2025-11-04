@@ -53,8 +53,8 @@ Place it in on of `$PATH` directory, for example `$HOME/.local/bin` in my case:
 echo $PATH
 /home/avkuzin/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-cp nfqknockd_ssh_wrapper $HOME/.local/ssh
-chmod +x $HOME/.local/ssh/nfqknockd_ssh_wrapper
+cp nfqknockd_ssh_wrapper $HOME/.local/bin/
+chmod +x $HOME/.local/bin/nfqknockd_ssh_wrapper
 ```
 By default in this example script open secret '123' and close secret '321', don't forget change it for your needs.
 
