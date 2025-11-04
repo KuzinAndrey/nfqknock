@@ -4,8 +4,16 @@ TODO description here.
 
 ## Compile
 
+Alpine Linux:
 ```sh
+# Build dependencies
+apk add libnfnetlink-dev
+apk add libnetfilter_queue-dev
+
+# Build project
 make
+
+# Install in /usr/local
 make install
 ```
 
