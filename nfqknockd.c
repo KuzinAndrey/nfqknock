@@ -705,7 +705,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Work in foreground mode (press Ctrl+C for break)\n");
 	}
 
-#define IPTABLES_NFQUEUE_TEMPLATE "iptables -%s INPUT -p tcp --syn -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
+#define IPTABLES_NFQUEUE_TEMPLATE "iptables -%s INPUT -p tcp --syn --dport 1025:65535 -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
 	// Add iptables rule if it not present
 	if (opt_touch_iptables) {
 		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE, "C", opt_queue_id);
