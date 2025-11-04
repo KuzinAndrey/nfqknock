@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# This is proxy wrapper for make connection to protected SSH port
+#
+# Use it in .ssh/config:
+#
+# Host protectedssh
+#     HostName 10.168.1.17
+#     User root
+#     Port 2222
+#     ProxyCommand sh -c "nfqknockd_ssh_wrapper %h %p"
+#     IdentityFile ~/.ssh/id_rsa
+#
+
+OPEN_PASS=123
+CLOSE_PASS=321
+
+type nfqknockd || exit 1
+type nc || exit 2
+
+# Host
+[ -n "$1" ] || exit 3
+# Port
+[ -n "$2" ] || exit 4
+
+# Open port
+PLIST=$(nfqknockd -o $OPEN_PASS -c $CLOSE_PASS -s | awk '/OPEN/{$1="";print$0;}')
+for P in $PLIST; do
+  nc -z -w 1 $1 $P
+done
+sleep 1
+
+# Open proxy connection for ssh
+nc $1 $2
+
+sleep 1
+# Close port
+PLIST=$(nfqknockd -o $OPEN_PASS -c $CLOSE_PASS -s | awk '/CLOSE/{$1="";print$0;}')
+for P in $PLIST; do
+  nc -z -w 1 $1 $P
+done
