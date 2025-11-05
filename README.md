@@ -20,11 +20,13 @@ make install
 ## Usage
 
 ```sh
-$ ./nfqknockd -h
 Usage: ./nfqknockd [options]
 Options:
   -f           Running foreground
+  -a           Start port number for guard/knock diapazon (default 1)
+  -b           End port number (default 65535)
   -p <port>    Guard TCP port (can be used multiple times)
+  -P <port>    Opened TCP port (can be used multiple times)
   -t <seconds> Timeout for knock sequence (default: 10)
   -o <secret>  Open secret (default: helloworld123)
   -c <secret>  Close secret (default: goodbyeworld123)
