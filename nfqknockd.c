@@ -93,12 +93,17 @@ void da_free(struct port_array_t *da) {
 	da->capacity = 0;
 }
 
+// Guard/Knock port diapazon
+static uint16_t opt_start_port = 1;
+static uint16_t opt_end_port = 65535;
+
 // Array with protected ports
 static struct port_array_t guard_tcp_ports = {0};
+static struct port_array_t opened_tcp_ports = {0};
 
 // Ports knocked by digest
-static struct port_array_t open_ports_by_digest = {0};
-static struct port_array_t close_ports_by_digest = {0};
+static struct port_array_t open_ports_sequence = {0};
+static struct port_array_t close_ports_sequence = {0};
 
 // Clients list
 struct client_t {
@@ -187,6 +192,7 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	struct in6_addr in6 = {0};
 	struct client_t *t = NULL;
 	int hit_guard_port = 0;
+	int hit_opened_port = 0;
 	char ipaddr[128];
 
 	ph = nfq_get_msg_packet_hdr(nfa);
@@ -258,8 +264,12 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	}
 
 	// Check for hitting guard port list
-	if (NULL != bsearch(&tcp_port, guard_tcp_ports.ports, guard_tcp_ports.count, sizeof(uint16_t), cmp_port))
-		hit_guard_port = 1;
+	if (NULL != bsearch(&tcp_port, guard_tcp_ports.ports, guard_tcp_ports.count,
+		sizeof(uint16_t), cmp_port)) hit_guard_port = 1;
+
+	// Check for hitting opened port list
+	if (opened_tcp_ports.count > 0 && NULL != bsearch(&tcp_port, opened_tcp_ports.ports,
+		opened_tcp_ports.count, sizeof(uint16_t), cmp_port)) hit_opened_port = 1;
 
 	// Try to find client in open list
 	t = clients_open_head;
@@ -283,7 +293,7 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 			goto verdict;
 
 		if (t->knocked_ports.count == digest_len / sizeof(uint16_t)) {
-			if (!check_knock_port_sequence(&t->knocked_ports, &close_ports_by_digest)) {
+			if (!check_knock_port_sequence(&t->knocked_ports, &close_ports_sequence)) {
 				// Drop first port from knock sequence for next time
 				memmove(&t->knocked_ports.ports[0], &t->knocked_ports.ports[1],
 					(t->knocked_ports.count - 1) * sizeof(uint16_t));
@@ -332,7 +342,7 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 		t->last_packet = nfq_tv.tv_sec;
 
 		if (t->knocked_ports.count == digest_len / sizeof(uint16_t)) {
-			if (!check_knock_port_sequence(&t->knocked_ports, &open_ports_by_digest)) {
+			if (!check_knock_port_sequence(&t->knocked_ports, &open_ports_sequence)) {
 				memmove(&t->knocked_ports.ports[0], &t->knocked_ports.ports[1],
 					(t->knocked_ports.count - 1) * sizeof(uint16_t));
 				t->knocked_ports.count--;
@@ -378,6 +388,7 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	client_insert(&clients_knock_head, new_client);
 
 verdict:
+	if (hit_opened_port) nf_verdict = NF_ACCEPT;
 	if (opt_verbose) fprintf(stderr, "verdict = %s\n", nf_verdict == NF_ACCEPT ? "accept" : "drop");
 	ret = nfq_set_verdict(qh, id, nf_verdict, 0, NULL);
 	// ret = nfq_set_verdict_batch(qh, id, nf_verdict);
@@ -387,8 +398,8 @@ verdict:
 
 int generate_port_sequence(struct port_array_t *head, unsigned char *digest, size_t digest_len) {
 	for (size_t i = 0; i < digest_len / 2; i++) {
-		// generate port above private system ports >1024
-		uint16_t port = ((digest[i*2] << 8 | digest[i*2+1]) >> 1) + 1025;
+		uint16_t port = ((digest[i*2] << 8) | digest[i*2+1]) % (opt_end_port - opt_start_port)
+				 + opt_start_port;
 		if (da_append(head, port) != 0) return -1;
 	}
 	return 0;
@@ -432,8 +443,8 @@ int prepare_secret_digest() {
 		}
 	}
 
-	da_clear(&open_ports_by_digest);
-	da_clear(&close_ports_by_digest);
+	da_clear(&open_ports_sequence);
+	da_clear(&close_ports_sequence);
 
 	// Generate open digest
 	if (!EVP_DigestInit_ex(digest_ctx, opt_digest_type, NULL)) {
@@ -461,7 +472,7 @@ int prepare_secret_digest() {
 		}
 		fprintf(stderr, "\n");
 	}
-	if (generate_port_sequence(&open_ports_by_digest, digest, digest_len) != 0) goto err;
+	if (generate_port_sequence(&open_ports_sequence, digest, digest_len) != 0) goto err;
 
 	// Generate close digest
 	if (!EVP_DigestInit_ex(digest_ctx, opt_digest_type, NULL)) {
@@ -479,7 +490,7 @@ int prepare_secret_digest() {
 		}
 		fprintf(stderr, "\n");
 	}
-	if (generate_port_sequence(&close_ports_by_digest, digest, digest_len) != 0) goto err;
+	if (generate_port_sequence(&close_ports_sequence, digest, digest_len) != 0) goto err;
 
 	free(digest);
 	free(buf);
@@ -506,7 +517,10 @@ void print_usage(FILE *o, const char *prog) {
 	fprintf(o, "Usage: %s [options]\n", prog);
 	fprintf(o, "Options:\n");
 	fprintf(o, "  -f           Running foreground\n");
+	fprintf(o, "  -a           Start port number for guard/knock diapazon (default %d)\n", opt_start_port);
+	fprintf(o, "  -b           End port number (default %d)\n", opt_end_port);
 	fprintf(o, "  -p <port>    Guard TCP port (can be used multiple times)\n");
+	fprintf(o, "  -P <port>    Opened TCP port (can be used multiple times)\n");
 	fprintf(o, "  -t <seconds> Timeout for knock sequence (default: %d)\n", opt_timeout);
 	fprintf(o, "  -o <secret>  Open secret (default: %s)\n", DEFAULT_OPEN_SECRET);
 	fprintf(o, "  -c <secret>  Close secret (default: %s)\n", DEFAULT_CLOSE_SECRET);
@@ -549,26 +563,38 @@ int main(int argc, char **argv) {
 	struct timeval netfilter_fd_tv;
 
 	da_init(&guard_tcp_ports);
-	da_init(&open_ports_by_digest);
-	da_init(&close_ports_by_digest);
+	da_init(&opened_tcp_ports);
+	da_init(&open_ports_sequence);
+	da_init(&close_ports_sequence);
 
 	// parse arguments
-	while ( (opt = getopt(argc, argv, "fp:t:o:c:d:vhq:m:si")) != -1) {
+	while ( (opt = getopt(argc, argv, "fa:b:p:P:t:o:c:d:vhq:m:si")) != -1) {
 		switch (opt) {
 		case 'f': { // foreground
 			opt_foreground = 1;
 			break;
 		}
-		case 'p': { // guard port
+		case 'a': // start port
+		case 'b': // end port
+		case 'p': // guard port
+		case 'P': // opened port
+		{
 			long port;
 			port = atol(optarg);
 			if (port <= 0 || port > 65535) {
 				fprintf(stderr, "Error: invalid port value - %s\n", optarg);
 				ret = 1; goto exit;
 			}
-			if (0 != da_append(&guard_tcp_ports, (uint16_t)port)) {
+			if (opt == 'p' && 0 != da_append(&guard_tcp_ports, (uint16_t)port)) {
 				fprintf(stderr, "Error: cannot append port %s\n", optarg);
 				ret = 1; goto exit;
+			} else if (opt == 'P' && 0 != da_append(&opened_tcp_ports, (uint16_t)port)) {
+				fprintf(stderr, "Error: cannot append port %s\n", optarg);
+				ret = 1; goto exit;
+			} else if (opt == 'a') {
+				opt_start_port = port;
+			} else if (opt == 'b') {
+				opt_end_port = port;
 			}
 			break;
 		}
@@ -624,6 +650,14 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if (opt_start_port > opt_end_port) {
+		fprintf(stderr, "Error: start port %d must be less than end port %d\n",
+			opt_start_port, opt_end_port);
+		ret = 1; goto exit;
+	}
+
+
+
 	if (!opt_open_secret) {
 		opt_open_secret = strdup(DEFAULT_OPEN_SECRET);
 		if (!opt_open_secret) {
@@ -664,13 +698,13 @@ int main(int argc, char **argv) {
 	// Show knock port sequence (useful for shell scripting)
 	if (opt_show_ports) {
 		printf("OPEN:");
-		for (size_t i = 0; i < open_ports_by_digest.count; i++) {
-			printf(" %d", open_ports_by_digest.ports[i]);
+		for (size_t i = 0; i < open_ports_sequence.count; i++) {
+			printf(" %d", open_ports_sequence.ports[i]);
 		}
 		printf("\n");
 		printf("CLOSE:");
-		for (size_t i = 0; i < close_ports_by_digest.count; i++) {
-			printf(" %d", close_ports_by_digest.ports[i]);
+		for (size_t i = 0; i < close_ports_sequence.count; i++) {
+			printf(" %d", close_ports_sequence.ports[i]);
 		}
 		printf("\n");
 		ret = 0; goto exit;
@@ -686,16 +720,44 @@ int main(int argc, char **argv) {
 		ret = 1; goto exit;
 	}
 
-	// Prepare sorted array with protected ports
+	// Prepare sorted array with protected and opened ports
 	qsort(guard_tcp_ports.ports, guard_tcp_ports.count, sizeof(*guard_tcp_ports.ports), cmp_port);
-	if (opt_verbose) {
-		fprintf(stderr, "Protected ports:");
-		for (size_t i = 0; i < guard_tcp_ports.count; i++) {
-			fprintf(stderr, " %d", guard_tcp_ports.ports[i]);
+	if (opt_verbose) fprintf(stderr, "Protected ports:");
+	for (size_t i = 0; i < guard_tcp_ports.count; i++) {
+		if (opt_verbose) fprintf(stderr, " %d", guard_tcp_ports.ports[i]);
+		if (opt_start_port > guard_tcp_ports.ports[i] ||
+		    opt_end_port < guard_tcp_ports.ports[i])
+		{
+			fprintf(stderr, "Warning: %s port %d not in working diapazon [ %d .. %d ]\n",
+				"guard", guard_tcp_ports.ports[i], opt_start_port, opt_end_port);
 		}
-		fprintf(stderr, "\n");
+	}
+	if (opt_verbose) fprintf(stderr, "\n");
+
+	if (opened_tcp_ports.count > 0) {
+		qsort(opened_tcp_ports.ports, opened_tcp_ports.count, sizeof(*opened_tcp_ports.ports), cmp_port);
+		if (opt_verbose) fprintf(stderr, "Opened ports:");
+		for (size_t i = 0; i < opened_tcp_ports.count; i++) {
+			if (opt_verbose) fprintf(stderr, " %d", opened_tcp_ports.ports[i]);
+
+			if (NULL != bsearch(&opened_tcp_ports.ports[i], guard_tcp_ports.ports,
+				guard_tcp_ports.count, sizeof(uint16_t), cmp_port))
+			{
+				fprintf(stderr, "Warning: opened port %d found in guard port list too\n",
+					opened_tcp_ports.ports[i]);
+			}
+
+			if (opt_start_port > opened_tcp_ports.ports[i] ||
+			    opt_end_port < opened_tcp_ports.ports[i])
+			{
+				fprintf(stderr, "Warning: %s port %d not in working diapazon [ %d .. %d ]\n",
+					"opened", opened_tcp_ports.ports[i], opt_start_port, opt_end_port);
+			}
+		}
+		if (opt_verbose) fprintf(stderr, "\n");
 	}
 
+	// Daemonize
 	if (!opt_foreground) {
 		if (daemon(0, 0) != 0) {
 			fprintf(stderr, "Error: cannot daemonize process\n");
@@ -705,13 +767,15 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Work in foreground mode (press Ctrl+C for break)\n");
 	}
 
-#define IPTABLES_NFQUEUE_TEMPLATE "iptables -%s INPUT -p tcp --syn --dport 1025:65535 -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
+#define IPTABLES_NFQUEUE_TEMPLATE "iptables -%s INPUT -p tcp --syn --dport %d:%d -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
 	// Add iptables rule if it not present
 	if (opt_touch_iptables) {
-		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE, "C", opt_queue_id);
+		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE,
+			 "C", opt_start_port, opt_end_port, opt_queue_id);
 		if (opt_verbose) fprintf(stderr, "Check: %s\n", netfilter_buf);
 		if (0 != system(netfilter_buf)) {
-			snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE , "I", opt_queue_id);
+			snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE,
+				 "I", opt_start_port, opt_end_port, opt_queue_id);
 			if (opt_verbose) fprintf(stderr, "Call: %s\n", netfilter_buf);
 			if (0 != system(netfilter_buf)) {
 				fprintf(stderr, "Error: Cannot create iptables rule\n");
@@ -785,7 +849,8 @@ exit:
 	if (netfilter_h) nfq_close(netfilter_h);
 
 	if (iptables_create_rule) {
-		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE, "D", opt_queue_id);
+		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE,
+			 "D", opt_start_port, opt_end_port, opt_queue_id);
 		if (opt_verbose) fprintf(stderr, "Call: %s\n", netfilter_buf);
 		if (0 != system(netfilter_buf)) {
 			fprintf(stderr, "Error: Cannot delete iptables rule\n");
@@ -795,8 +860,9 @@ exit:
 	if (digest_ctx) EVP_MD_CTX_free(digest_ctx);
 
 	da_free(&guard_tcp_ports);
-	da_free(&open_ports_by_digest);
-	da_free(&close_ports_by_digest);
+	da_free(&opened_tcp_ports);
+	da_free(&open_ports_sequence);
+	da_free(&close_ports_sequence);
 
 	if (opt_open_secret) free(opt_open_secret);
 	if (opt_close_secret) free(opt_close_secret);
