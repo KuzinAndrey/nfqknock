@@ -841,6 +841,7 @@ int main(int argc, char **argv) {
 		if (dump_open_clients || dump_unknown_client) {
 			char ipaddr[128];
 			struct client_t *t;
+			int count = 0;
 
 			t = clients_open_head;
 			while (dump_open_clients && t) {
@@ -850,10 +851,14 @@ int main(int argc, char **argv) {
 					inet_ntop(AF_INET6, &t->remote_addr.in6, ipaddr, sizeof(ipaddr));
 				}
 				syslog(LOG_INFO, "opened for %s\n", ipaddr);
+				count++;
 				t = t->next;
 			}
+			if (dump_open_clients && !count)
+				syslog(LOG_INFO, "No any opened clients");
 			dump_open_clients = 0;
 
+			count = 0;
 			t = clients_knock_head;
 			while (dump_unknown_client && t) {
 				if (t->addr_type == ADDR_TYPE_IPV4) {
@@ -862,8 +867,11 @@ int main(int argc, char **argv) {
 					inet_ntop(AF_INET6, &t->remote_addr.in6, ipaddr, sizeof(ipaddr));
 				}
 				syslog(LOG_INFO, "unknown %s ts %ld\n", ipaddr, t->last_packet);
+				count++;
 				t = t->next;
 			}
+			if (dump_unknown_client && !count)
+				syslog(LOG_INFO, "No any knocked clients");
 			dump_unknown_client = 0;
 		}
 	} // while working
