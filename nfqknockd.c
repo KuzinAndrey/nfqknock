@@ -29,7 +29,11 @@ Home:
 #include <openssl/conf.h>
 #include <openssl/evp.h>
 
+#define PROG_DATE "2025-11-04"
+
 static int working = 1;
+static int dump_open_clients = 0;
+static int dump_unknown_client = 0;
 static int opt_foreground = 0;
 static int opt_verbose = 0;
 static int opt_show_ports = 0;
@@ -487,9 +491,15 @@ err:
 // Signal handler
 void signal_handler(int sig) {
 	switch (sig) {
-		case SIGTERM:
-		case SIGINT:
-			working = 0;
+	case SIGTERM:
+	case SIGINT:
+		working = 0;
+		break;
+	case SIGUSR1:
+		dump_open_clients = 1;
+		break;
+	case SIGUSR2:
+		dump_unknown_client = 1;
 		break;
 	} // swtich
 } // signal_handler
@@ -512,15 +522,18 @@ void print_usage(FILE *o, const char *prog) {
 	fprintf(o, "  -m <maxlen>  Netfilter max queue length (default: %d)\n", opt_queue_maxlen);
 	fprintf(o, "  -i           Create iptables rule with NFQUEUE target\n");
 	fprintf(o, "  -h           Print this help\n");
-	fprintf(o,"Decription:\n");
+	fprintf(o, "Signals:\n");
+	fprintf(o, "  USR1 - dump opened IPs in syslog\n");
+	fprintf(o, "  USR2 - dump knocked IPs in syslog\n");
+	fprintf(o, "Decription:\n");
 	fprintf(o, "  This is nfqknockd - daemon for guard TCP ports and open/close by\n");
 	fprintf(o, "  cryptographically generated port-knocking sequences rotated every hour.\n");
 	fprintf(o, "  It based on NFQUEUE library and require less resources than libpcap based.\n");
 	fprintf(o, "  Not need interface working in promisc mode for capture knock packets.\n");
 	fprintf(o, "Author:\n");
-	fprintf(o, "  Kuzin Andrey <kuzinandrey@yandex.ru> 2025-11-04\n");
+	fprintf(o, "  Kuzin Andrey <kuzinandrey@yandex.ru> %s\n", PROG_DATE);
 	fprintf(o, "Home:\n");
-	fprintf(o,"   https://github.com/KuzinAndrey/nfqknock\n");
+	fprintf(o, "  https://github.com/KuzinAndrey/nfqknock\n");
 	fprintf(o, "Examples:\n");
 	fprintf(o, "  %s -p 22 -p 443 -t 10 -o abracadabra -c ahalaymahalay -d sha256\n", prog);
 	fprintf(o, "  Protect ssh and https port from unknown connections.\n");
@@ -637,8 +650,6 @@ int main(int argc, char **argv) {
 			opt_start_port, opt_end_port);
 		ret = 1; goto exit;
 	}
-
-
 
 	if (!opt_open_secret) {
 		opt_open_secret = strdup(DEFAULT_OPEN_SECRET);
@@ -799,6 +810,8 @@ int main(int argc, char **argv) {
 
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
+	signal(SIGUSR1, signal_handler);
+	signal(SIGUSR2, signal_handler);
 
 	while (1 == working) {
 		// Get NFQUEUE packet for work
@@ -823,6 +836,35 @@ int main(int argc, char **argv) {
 			if (opt_verbose) {
 				fprintf(stderr, "Rotated secrets at %ld\n", time(NULL));
 			}
+		}
+
+		if (dump_open_clients || dump_unknown_client) {
+			char ipaddr[128];
+			struct client_t *t;
+
+			t = clients_open_head;
+			while (dump_open_clients && t) {
+				if (t->addr_type == ADDR_TYPE_IPV4) {
+					inet_ntop(AF_INET, &t->remote_addr.in, ipaddr, sizeof(ipaddr));
+				} else if (t->addr_type == ADDR_TYPE_IPV6) {
+					inet_ntop(AF_INET6, &t->remote_addr.in6, ipaddr, sizeof(ipaddr));
+				}
+				syslog(LOG_INFO, "opened for %s\n", ipaddr);
+				t = t->next;
+			}
+			dump_open_clients = 0;
+
+			t = clients_knock_head;
+			while (dump_unknown_client && t) {
+				if (t->addr_type == ADDR_TYPE_IPV4) {
+					inet_ntop(AF_INET, &t->remote_addr.in, ipaddr, sizeof(ipaddr));
+				} else if (t->addr_type == ADDR_TYPE_IPV6) {
+					inet_ntop(AF_INET6, &t->remote_addr.in6, ipaddr, sizeof(ipaddr));
+				}
+				syslog(LOG_INFO, "unknown %s ts %ld\n", ipaddr, t->last_packet);
+				t = t->next;
+			}
+			dump_unknown_client = 0;
 		}
 	} // while working
 

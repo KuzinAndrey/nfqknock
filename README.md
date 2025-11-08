@@ -58,23 +58,9 @@ Options:
   -m <maxlen>  Netfilter max queue length (default: 10000)
   -i           Create iptables rule with NFQUEUE target
   -h           Print this help
-Decription:
-  This is nfqknockd - daemon for guard TCP ports and open/close by
-  cryptographically generated port-knocking sequences rotated every hour.
-  It based on NFQUEUE library and require less resources than libpcap based.
-  Not need interface working in promisc mode for capture knock packets.
-Author:
-  Kuzin Andrey <kuzinandrey@yandex.ru> 2025-11-04
-Home:
-   https://github.com/KuzinAndrey/nfqknock
-Examples:
-  ./nfqknockd -p 22 -p 443 -t 10 -o abracadabra -c ahalaymahalay -d sha256
-  Protect ssh and https port from unknown connections.
-
-  ./nfqknockd -o 123 -c 321 -s
-  OPEN: 19161 3854 3145 22494 24404 19309 4462 13191
-  CLOSE: 3116 25580 8203 7196 17537 13124 20176 1285
-  Show port knock sequences for use in shell scripts to open/close protected ports.
+Signals:
+  USR1 - dump opened IPs in syslog
+  USR2 - dump knocked IPs in syslog
 ```
 
 ## Configure SSH client
