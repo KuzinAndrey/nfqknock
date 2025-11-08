@@ -24,6 +24,7 @@ Home:
 #include <linux/netfilter.h>
 #include <libnfnetlink/libnfnetlink.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
+#include <syslog.h>
 
 #include <openssl/conf.h>
 #include <openssl/evp.h>
@@ -231,9 +232,7 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 			tcp_packet = (struct tcphdr *)(payload + ip_hl);
 		}
 
-		if (opt_verbose) {
-			inet_ntop(AF_INET, &ip_packet->ip_src, ipaddr, sizeof(ipaddr));
-		}
+		inet_ntop(AF_INET, &ip_packet->ip_src, ipaddr, sizeof(ipaddr));
 	} else if (6 == ip_packet->ip_v) {
 		// TODO IPv6 support
 		ip6_packet = (struct ip6_hdr *)payload;
@@ -243,10 +242,8 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 		// tcp_packet = (struct tcphdr *)(payload + find_tcp_offset);
 		// now simply accept packet
 
-		if (opt_verbose) {
-			inet_ntop(AF_INET, &ip6_packet->ip6_src, ipaddr, sizeof(ipaddr));
-			(void)ip6_packet_len;
-		}
+		inet_ntop(AF_INET, &ip6_packet->ip6_src, ipaddr, sizeof(ipaddr));
+		(void)ip6_packet_len;
 
 		goto verdict;
 	} else {
@@ -300,15 +297,10 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 				t->knocked_ports.count--;
 			} else {
 				// Get close ports sequence
-				if (opt_verbose) {
-					if (t->addr_type == ADDR_TYPE_IPV4) {
-						inet_ntop(AF_INET, &t->remote_addr.in, ipaddr, sizeof(ipaddr));
-					} else if (t->addr_type == ADDR_TYPE_IPV6) {
-						inet_ntop(AF_INET6, &t->remote_addr.in6, ipaddr, sizeof(ipaddr));
-					}
-					fprintf(stderr, "%ld: client %s close\n", nfq_tv.tv_sec, ipaddr);
-				}
 				client_remove(&clients_open_head, t);
+				if (opt_verbose)
+					fprintf(stderr, "%ld: client %s close\n", nfq_tv.tv_sec, ipaddr);
+				syslog(LOG_INFO, "%ld: client %s close\n", nfq_tv.tv_sec, ipaddr);
 			}
 		}
 		goto verdict;
@@ -348,16 +340,11 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 				t->knocked_ports.count--;
 			} else {
 				// Move client to open list
-				if (opt_verbose) {
-					if (t->addr_type == ADDR_TYPE_IPV4) {
-						inet_ntop(AF_INET, &t->remote_addr.in, ipaddr, sizeof(ipaddr));
-					} else if (t->addr_type == ADDR_TYPE_IPV6) {
-						inet_ntop(AF_INET6, &t->remote_addr.in6, ipaddr, sizeof(ipaddr));
-					}
-					fprintf(stderr, "%ld: client %s open\n", nfq_tv.tv_sec, ipaddr);
-				}
 				client_move(&clients_knock_head, &clients_open_head, t);
 				nf_verdict = NF_ACCEPT;
+				if (opt_verbose)
+					fprintf(stderr, "%ld: client %s open\n", nfq_tv.tv_sec, ipaddr);
+				syslog(LOG_INFO, "%ld: client %s open\n", nfq_tv.tv_sec, ipaddr);
 			}
 		}
 		goto verdict;
@@ -378,11 +365,6 @@ static int knock_nfq_callback(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	if (da_append(&new_client->knocked_ports, tcp_port) != 0) goto verdict;
 
 	if (opt_verbose) {
-		if (new_client->addr_type == ADDR_TYPE_IPV4) {
-			inet_ntop(AF_INET, &new_client->remote_addr.in, ipaddr, sizeof(ipaddr));
-		} else if (new_client->addr_type == ADDR_TYPE_IPV6) {
-			inet_ntop(AF_INET6, &new_client->remote_addr.in6, ipaddr, sizeof(ipaddr));
-		}
 		fprintf(stderr, "%ld: new client %s\n", nfq_tv.tv_sec, ipaddr);
 	}
 	client_insert(&clients_knock_head, new_client);
