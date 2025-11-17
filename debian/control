@@ -1,7 +1,7 @@
 Source: nfqknock
 Priority: optional
 Maintainer: Kuzin Andrey <kuzinandrey@yandex.ru>
-Build-Depends: debhelper-compat (= 13),
+Build-Depends: debhelper-compat (= 11),
                libc6-dev,
                libmnl-dev,
                libnfnetlink-dev,
