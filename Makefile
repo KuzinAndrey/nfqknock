@@ -23,7 +23,7 @@ else
 endif
 
 # Libraries
-LIBS = -lnfnetlink -lnetfilter_queue -lssl -lcrypto
+LIBS = -lnfnetlink -lnetfilter_queue -lcrypto
 
 # Source and object
 SRC = nfqknockd.c
@@ -31,7 +31,7 @@ OBJ = $(SRC:.c=.o)
 TARGET = nfqknockd
 
 # Installation paths
-PREFIX ?= /usr/local
+PREFIX ?= /usr
 BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man
 
@@ -58,15 +58,16 @@ clean:
 # Install
 install: $(TARGET)
 	install -d $(DESTDIR)$(BINDIR)
-	install -d $(DESTDIR)$(MANDIR)/man8
+#	install -d $(DESTDIR)$(MANDIR)/man8
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
-	# Optional: install man page if exists
-	# install -m 644 $(TARGET).8 $(DESTDIR)$(MANDIR)/man8/
+	install -m 755 nfqknockd_ssh_wrapper $(DESTDIR)$(BINDIR)/nfqknockd_ssh_wrapper
+#	# Optional: install man page if exists
+#	# install -m 644 $(TARGET).8 $(DESTDIR)$(MANDIR)/man8/
 
 # Uninstall
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
-	rm -f $(DESTDIR)$(MANDIR)/man8/$(TARGET).8
+#	rm -f $(DESTDIR)$(MANDIR)/man8/$(TARGET).8
 
 # Phony targets
 .PHONY: all clean install uninstall
@@ -74,7 +75,7 @@ uninstall:
 # Optional: run with sudo
 .PHONY: install-sudo
 install-sudo:
-	$(MAKE) install DESTDIR=/ PREFIX=/usr/local
+	$(MAKE) install DESTDIR=/ PREFIX=/usr
 
 # Print help
 .PHONY: help
@@ -85,12 +86,12 @@ help:
 	@echo "  all            - Build $(TARGET) (default)"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  install        - Install to $(PREFIX) (use DESTDIR= for packaging)"
-	@echo "  install-sudo   - Install to /usr/local with sudo"
+	@echo "  install-sudo   - Install to /usr with sudo"
 	@echo "  uninstall      - Remove installed files"
 	@echo
 	@echo "Options:"
 	@echo "  BUILD=debug    - Enable debug build (default: release)"
-	@echo "  PREFIX=/path   - Set install prefix (default: /usr/local)"
+	@echo "  PREFIX=/path   - Set install prefix (default: /usr)"
 	@echo
 	@echo "Example:"
 	@echo "  make"

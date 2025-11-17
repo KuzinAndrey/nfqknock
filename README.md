@@ -26,16 +26,28 @@ Because of that we use less resources and more secure from attackers.
 
 ## Compile
 
-Alpine Linux:
+Debian/Ubuntu/Mint linux:
+```sh
+# install build dependencies
+mk-build-deps -ir -s "sudo" debian/control
+# or manually
+sudo apt install libc6-dev libnfnetlink-dev libnetfilter-queue-dev libssl-dev
+
+# build package
+dpkg-buildpackage -nc -uc -us -j1
+```
+
+Alpine Linux (TODO APKBUILD):
 ```sh
 # Build dependencies
+apk add openssl-dev
 apk add libnfnetlink-dev
 apk add libnetfilter_queue-dev
 
 # Build project
 make
 
-# Install in /usr/local
+# Install in /usr
 make install
 ```
 

@@ -1,0 +1,24 @@
+Source: nfqknock
+Priority: optional
+Maintainer: Kuzin Andrey <kuzinandrey@yandex.ru>
+Build-Depends: debhelper-compat (= 13),
+               libc6-dev,
+               libmnl-dev,
+               libnfnetlink-dev,
+               libnetfilter-queue-dev,
+               libssl-dev,
+Rules-Requires-Root: no
+Standards-Version: 4.6.1
+Section: net
+Homepage: https://github.com/KuzinAndrey/nfqknock
+Vcs-Git: https://github.com/KuzinAndrey/nfqknock.git
+Vcs-Browser: https://github.com/KuzinAndrey/nfqknock
+
+Package: nfqknock
+Architecture: linux-any
+Multi-Arch: same
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: nfqknockd - another try to solve port-knocking
+ issue by using NFQUEUE target in iptables and cryptographically
+ generated periodically rotated knocking sequences. Use only one
+ iptables rule for all job.
