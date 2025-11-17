@@ -40,6 +40,7 @@ static int opt_show_ports = 0;
 static uint16_t opt_queue_id = 100;
 static uint32_t opt_queue_maxlen = 10000;
 static uint16_t opt_touch_iptables = 0;
+char *iptables_cmd = NULL;
 static int opt_timeout = 10; // timeout for knocking sequence
 static const EVP_MD *opt_digest_type = NULL;
 
@@ -544,6 +545,21 @@ void print_usage(FILE *o, const char *prog) {
 	fprintf(o, "  Show port knock sequences for use in shell scripts to open/close protected ports.\n");
 }
 
+void find_iptables_cmd() {
+	char path[] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin";
+	char *p = path;
+	char *dir;
+	char cmd[PATH_MAX];
+
+	while ((dir = strsep(&p,":")) != NULL) {
+		snprintf(cmd, sizeof(cmd), "%s/iptables", dir);
+		if (0 == access(cmd, R_OK | X_OK)) {
+			iptables_cmd = strdup(cmd);
+			break;
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 	int ret = 0;
 	struct nfq_handle *netfilter_h = NULL;
@@ -637,6 +653,7 @@ int main(int argc, char **argv) {
 			break;
 		case 'i': // create iptables rule
 			opt_touch_iptables = 1;
+			find_iptables_cmd();
 			break;
 		case '?':
 			fprintf(stderr, "Error: unknown argument - %c\n", optopt);
@@ -760,15 +777,15 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Work in foreground mode (press Ctrl+C for break)\n");
 	}
 
-#define IPTABLES_NFQUEUE_TEMPLATE "iptables -%s INPUT -p tcp --syn --dport %d:%d -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
+#define IPTABLES_NFQUEUE_TEMPLATE "%s -%s INPUT -p tcp --syn --dport %d:%d -j NFQUEUE --queue-bypass --queue-num %d 2> /dev/null"
 	// Add iptables rule if it not present
-	if (opt_touch_iptables) {
+	if (opt_touch_iptables && iptables_cmd) {
 		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE,
-			 "C", opt_start_port, opt_end_port, opt_queue_id);
+			 iptables_cmd, "C", opt_start_port, opt_end_port, opt_queue_id);
 		if (opt_verbose) fprintf(stderr, "Check: %s\n", netfilter_buf);
 		if (0 != system(netfilter_buf)) {
 			snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE,
-				 "I", opt_start_port, opt_end_port, opt_queue_id);
+				 iptables_cmd, "I", opt_start_port, opt_end_port, opt_queue_id);
 			if (opt_verbose) fprintf(stderr, "Call: %s\n", netfilter_buf);
 			if (0 != system(netfilter_buf)) {
 				fprintf(stderr, "Error: Cannot create iptables rule\n");
@@ -880,14 +897,15 @@ exit:
 	if (netfilter_qh) nfq_destroy_queue(netfilter_qh);
 	if (netfilter_h) nfq_close(netfilter_h);
 
-	if (iptables_create_rule) {
+	if (iptables_create_rule && iptables_cmd) {
 		snprintf(netfilter_buf, sizeof(netfilter_buf), IPTABLES_NFQUEUE_TEMPLATE,
-			 "D", opt_start_port, opt_end_port, opt_queue_id);
+			iptables_cmd, "D", opt_start_port, opt_end_port, opt_queue_id);
 		if (opt_verbose) fprintf(stderr, "Call: %s\n", netfilter_buf);
 		if (0 != system(netfilter_buf)) {
 			fprintf(stderr, "Error: Cannot delete iptables rule\n");
 		}
 	}
+	if (iptables_cmd) free(iptables_cmd);
 
 	if (digest_ctx) EVP_MD_CTX_free(digest_ctx);
 
