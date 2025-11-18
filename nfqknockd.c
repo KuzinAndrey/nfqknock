@@ -78,12 +78,15 @@ int da_init(struct port_array_t *da) {
 int da_append(struct port_array_t *da, uint16_t port) {
 	uint16_t *rports;
 	if (da->count >= da->capacity) {
-		da->capacity = da->capacity == 0 ? DA_INIT_CAP : da->capacity*2;
-		rports = realloc(da->ports, da->capacity * sizeof(*da->ports));
+		size_t newcap = da->capacity == 0 ? DA_INIT_CAP : da->capacity*2;
+		rports = realloc(da->ports, newcap * sizeof(*da->ports));
 		if (!rports) {
 			fprintf(stderr, "Error: realloc failed in da_append\n");
 			return -ENOMEM;
-		} else da->ports = rports;
+		} else {
+			da->ports = rports;
+			da->capacity = newcap;
+		}
 	}
 	da->ports[da->count++] = port;
 	return 0;
