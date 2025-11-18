@@ -79,7 +79,7 @@ int da_append(struct port_array_t *da, uint16_t port) {
 	uint16_t *rports;
 	if (da->count >= da->capacity) {
 		size_t newcap = da->capacity == 0 ? DA_INIT_CAP : da->capacity*2;
-		rports = realloc(da->ports, newcap * sizeof(*da->ports));
+		rports = reallocarray(da->ports, newcap, sizeof(*da->ports));
 		if (!rports) {
 			fprintf(stderr, "Error: realloc failed in da_append\n");
 			return -ENOMEM;
