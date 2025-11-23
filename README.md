@@ -37,7 +37,7 @@ sudo apt install libc6-dev libnfnetlink-dev libnetfilter-queue-dev libssl-dev
 dpkg-buildpackage -nc -uc -us -j1
 ```
 
-Alpine Linux (TODO APKBUILD):
+Alpine Linux manual:
 ```sh
 # Build dependencies
 apk add openssl-dev
@@ -49,6 +49,22 @@ make
 
 # Install in /usr
 make install
+```
+Alpine Linux package:
+```sh
+adduser builder -G abuild
+sudo -Hiu builder
+abuild-keygen -a
+git clone https://github.com/KuzinAndrey/nfqknock
+cd nfqknock
+abuild -r
+cd ../packages/$(whoami)/$(uname -m)
+ls && pwd
+exit
+
+# install package in system
+cd /home/builder/packages/builder/x86_64
+apk add --force --allow-untrusted nfqknock*.apk
 ```
 
 ## Usage
